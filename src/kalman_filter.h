@@ -46,6 +46,10 @@ class KalmanFilter {
    */
   void UpdateEKF(const Eigen::VectorXd &z);
 
+private:
+  void CommonUpdateForLidarAndRadar(const Eigen::VectorXd& y);
+
+public:
   // state vector
   Eigen::VectorXd x_;
 

@@ -1,15 +1,17 @@
 #include "kalman_filter.h"
+#include <iostream>
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
-
+using std::cout;
+using std::endl;
 /* 
  * Please note that the Eigen library does not initialize 
  *   VectorXd or MatrixXd objects with zeros upon creation.
  */
 
-const float PI = 3.141592653589793238463;
-const float EPS = 0.0001;
+const double PI = 3.141592653589793238463;
+const double EPS = 0.0001;
 
 KalmanFilter::KalmanFilter() {}
 
@@ -37,23 +39,27 @@ void KalmanFilter::Predict() {
   
 }
 
+void KalmanFilter::CommonUpdateForLidarAndRadar(const VectorXd& y) {
+  MatrixXd Ht     = H_.transpose();
+  MatrixXd S      = H_*P_*Ht + R_;
+  MatrixXd Si     = S.inverse();
+  MatrixXd PHt    = P_*Ht;
+  MatrixXd K      = PHt*Si;
+
+  //new estimate
+  x_          = x_ + (K*y);
+  long x_size = x_.size();
+  MatrixXd I  = MatrixXd::Identity(x_size, x_size);
+  P_          = (I-K*H_) * P_;
+}
+
 void KalmanFilter::Update(const VectorXd &z) {
   /**
    * TODO: update the state by using Kalman Filter equations
    */
   VectorXd y = z - (H_ * x_); 
   
-  MatrixXd Ht = H_.transpose();
-  MatrixXd S = H_ * P_ * Ht  + R_;
-  MatrixXd Si = S.inverse();
-  MatrixXd PHt = P_ * Ht;
-  MatrixXd K = PHt * Si;
-  
-  x_ = x_ + (K * y);
-    
-  unsigned int x_size = x_.size();
-  MatrixXd I = MatrixXd::Identity(x_size, x_size);
-  P_ = (I - K * H_) * P_;
+  CommonUpdateForLidarAndRadar(y);
 }
 
 void KalmanFilter::UpdateEKF(const VectorXd &z) {
@@ -61,35 +67,24 @@ void KalmanFilter::UpdateEKF(const VectorXd &z) {
    * TODO: update the state by using Extended Kalman Filter equations
    */
     
-  float px = x_(0);
-  float py = x_(1);
-  float vx = x_(2);
-  float vy = x_(3);
+  double px = x_(0);
+  double py = x_(1);
+  double vx = x_(2);
+  double vy = x_(3);
     
-  float rho = sqrt(px*px + py*py);
-  float phi = atan2(py, px);
-  float rho_dot = 0;
-  
-  if(fabs(rho) > EPS) {    
-    rho_dot = ((px * vx + py * vy) / rho);
-  }else{
-      rho_dot = 0;
-  }
-    
+  const double rho = sqrt(px*px + py*py);
+  const double phi = fabs(px) > EPS ? atan2(py, px) : 0.0; // atan2 returns values between -pi and pi
+  const double rho_dot = fabs(rho) > EPS ? (px*vx + py*vy) / rho : 0.0;
+
   VectorXd z_pred(3);
   z_pred << rho, phi, rho_dot;
-  VectorXd y = z - z_pred;
-    
-  MatrixXd Ht = H_.transpose();
-  MatrixXd S = H_ * P_ * Ht + R_;  
-  MatrixXd Si = S.inverse();
-  MatrixXd PHt = P_ * Ht;
-  MatrixXd K = PHt * Si;
-  
-  // new estimation
-  x_ = x_ + (K * y);
-  int x_size = x_.size();
-  MatrixXd I = MatrixXd::Identity(x_size, x_size);
-  P_ = (I - K * H_ ) * P_;
-  
+  VectorXd y = z-z_pred;
+
+  /* correction for phi in y to be not in the range -pi to pi
+   * Errored on this place to make RMSE wrong. */
+  y(1) = y(1)>PI ? y(1)-2*PI
+       : y(1)<-PI ? y(1)+2*PI
+       : y(1);
+
+  CommonUpdateForLidarAndRadar(y);
 }
